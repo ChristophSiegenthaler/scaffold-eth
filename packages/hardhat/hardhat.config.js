@@ -1,8 +1,7 @@
-const { usePlugin } = require("@nomiclabs/buidler/config");
 const { utils } = require("ethers");
 const fs = require("fs");
 
-usePlugin("@nomiclabs/buidler-waffle");
+require("@nomiclabs/hardhat-waffle");
 
 const { isAddress, getAddress, formatUnits, parseUnits } = utils;
 
@@ -43,24 +42,30 @@ module.exports = {
     localhost: {
       url: "http://localhost:8545",
       /*
-        notice no mnemonic here? it will just use account 0 of the buidler node to deploy
+        notice no mnemonic here? it will just use account 0 of the hardhat node to deploy
         (you can put in a mnemonic here to set the deployer locally)
       */
     },
     rinkeby: {
-      url: "https://rinkeby.infura.io/v3/c954231486fa42ccb6d132b406483d14",//<---- YOUR INFURA ID! (or it won't work)
+      url: "https://rinkeby.infura.io/v3/460f40a260564ac4a4f4b3fffb032dad", //<---- YOUR INFURA ID! (or it won't work)
       accounts: {
         mnemonic: mnemonic(),
       },
     },
     mainnet: {
-      url: "https://mainnet.infura.io/v3/c954231486fa42ccb6d132b406483d14",//<---- YOUR INFURA ID! (or it won't work)
+      url: "https://mainnet.infura.io/v3/460f40a260564ac4a4f4b3fffb032dad", //<---- YOUR INFURA ID! (or it won't work)
       accounts: {
         mnemonic: mnemonic(),
       },
     },
     ropsten: {
-      url: "https://ropsten.infura.io/v3/c954231486fa42ccb6d132b406483d14",//<---- YOUR INFURA ID! (or it won't work)
+      url: "https://ropsten.infura.io/v3/460f40a260564ac4a4f4b3fffb032dad", //<---- YOUR INFURA ID! (or it won't work)
+      accounts: {
+        mnemonic: mnemonic(),
+      },
+    },
+    goerli: {
+      url: "https://goerli.infura.io/v3/460f40a260564ac4a4f4b3fffb032dad", //<---- YOUR INFURA ID! (or it won't work)
       accounts: {
         mnemonic: mnemonic(),
       },
@@ -73,12 +78,14 @@ module.exports = {
       },
     },
   },
-  solc: {
-    version: "0.6.6",
-    optimizer: {
-      enabled: true,
-      runs: 200,
-    },
+  solidity: {
+    version: "0.6.7",
+    settings: {
+      optimizer: {
+        enabled: true,
+        runs: 200
+      }
+    }
   },
 };
 
@@ -89,6 +96,56 @@ function debug(text) {
     console.log(text);
   }
 }
+
+task("wallet", "Create a wallet (pk) link", async (_, { ethers }) => {
+  const randomWallet = ethers.Wallet.createRandom()
+  const privateKey = randomWallet._signingKey().privateKey
+  console.log("🔐 WALLET Generated as " + randomWallet.address + "")
+  console.log("🔗 http://localhost:3000/pk#"+privateKey)
+});
+
+
+task("fundedwallet", "Create a wallet (pk) link and fund it with deployer?")
+  .addOptionalParam("amount", "Amount of ETH to send to wallet after generating")
+  .addOptionalParam("url", "URL to add pk to")
+  .setAction(async (taskArgs, { network, ethers }) => {
+
+    const randomWallet = ethers.Wallet.createRandom()
+    const privateKey = randomWallet._signingKey().privateKey
+    console.log("🔐 WALLET Generated as " + randomWallet.address + "")
+    let url = taskArgs.url?taskArgs.url:"http://localhost:3000"
+
+    let localDeployerMnemonic
+    try{
+      localDeployerMnemonic = fs.readFileSync("./mnemonic.txt")
+      localDeployerMnemonic = localDeployerMnemonic.toString().trim()
+    } catch (e) {
+      /* do nothing - this file isn't always there */
+    }
+
+    let amount = taskArgs.amount?taskArgs.amount:"0.01"
+    const tx = {
+      to: randomWallet.address,
+      value: ethers.utils.parseEther(amount)
+    };
+
+    //SEND USING LOCAL DEPLOYER MNEMONIC IF THERE IS ONE
+    // IF NOT SEND USING LOCAL HARDHAT NODE:
+    if(localDeployerMnemonic){
+      let deployerWallet = new ethers.Wallet.fromMnemonic(localDeployerMnemonic)
+      deployerWallet = deployerWallet.connect(ethers.provider)
+      console.log("💵 Sending "+amount+" ETH to "+randomWallet.address+" using deployer account");
+      let sendresult = await deployerWallet.sendTransaction(tx)
+      console.log("\n"+url+"/pk#"+privateKey+"\n")
+      return
+    }else{
+      console.log("💵 Sending "+amount+" ETH to "+randomWallet.address+" using local node");
+      console.log("\n"+url+"/pk#"+privateKey+"\n")
+      return send(ethers.provider.getSigner(), tx);
+    }
+
+});
+
 
 task("generate", "Create a mnemonic for builder deploys", async (_, { ethers }) => {
   const bip39 = require("bip39")
@@ -107,7 +164,7 @@ task("generate", "Create a mnemonic for builder deploys", async (_, { ethers }) 
   if (DEBUG) console.log("privateKey", privateKey)
   var EthUtil = require('ethereumjs-util');
   const address = "0x" + EthUtil.privateToAddress(wallet._privKey).toString('hex')
-  console.log("🔐 Account Generated as " + address + ".txt and set as mnemonic in packages/buidler")
+  console.log("🔐 Account Generated as " + address + " and set as mnemonic in packages/hardhat")
   console.log("💬 Use 'yarn run account' to get more information about the deployment account.")
 
   fs.writeFileSync("./" + address + ".txt", mnemonic.toString())
